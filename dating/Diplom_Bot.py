@@ -23,7 +23,6 @@ class Bot(object):
         # получаем участников группы
         params = {'access_token': self.token, 'group_id': self.group_id, 'sort': 'time_asc', 'v': 5.124}
         member_list = requests.get(f'https://api.vk.com/method/groups.getMembers', params=params).json()['response']['items']
-
         # для каждого участника выводим условия для подбора кандидатов
         for self.user_id in member_list:
             params_user = {'access_token': self.token, 'user_ids': self.user_id, 'fields': 'first_name,last_name,sex,bdate,relation,city', 'v': 5.124}
@@ -41,22 +40,22 @@ class Bot(object):
             self.member_bdate1 = member_bdate.replace('.', ',')[5:]
 
             # знакомимся и запрашивем недостающие данные для подбора кандидатов
-            for user_id in member_list:
-                self.write_msg(user_id, 'Привет! Меня зовут Бот. Я готов помочь вам найти вторую половинку. Начнем? Да/Нет')
+            for self.user_id in member_list:
+                self.write_msg(self.user_id, 'Привет! Меня зовут Бот. Я готов помочь вам найти вторую половинку. Начнем? Да/Нет')
                 for event in self.longpoll.listen():
                     if event.type == VkEventType.MESSAGE_NEW:
                         if event.to_me:
                             request = event.text
-                            if request == 'нет' or request == 'НЕТ' or request == 'Нет' or request == 'нЕТ':
+                            if 'нет' in request or 'НЕТ' in request or 'Нет' in request or 'нЕТ' in request:
                                 self.write_msg(event.user_id, 'Жаль... Если передумаете, обращайтесь!')
-                            elif request == 'да' or request == 'ДА' or request == 'Да' or request == 'начнем' or request == 'Начнем':
+                            elif 'да' in request or 'ДА' in request or 'Да' in request or 'начнем' in request or 'Начнем' in request or 'Давай' in request or 'давай' in request:
                                 if 'city' in member_info:
                                     member_city = member_info['city']['title']
                                     param_city = {'access_token': self.token_search, 'country_id': '1', 'q': member_city, 'count': '1', 'v': 5.124}
                                     self.candidate_city = requests.get(f'https://api.vk.com/method/database.getCities', params=param_city,
                                                                          headers=self.headers).json()['response']['items'][0]['id']
                                     if len(member_bdate) == 9:
-                                        self.write_msg(event.user_id, 'Отлично! Отправляю список подходящих кандидатов...')
+                                        self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
                                         return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
                                     else:
                                         self.write_msg(event.user_id, 'Укажите год вашего рождения в формате 0000 ')
@@ -65,7 +64,7 @@ class Bot(object):
                                                 if event.to_me:
                                                     request = event.text
                                                     self.member_bdate1 = request
-                                                    self.write_msg(event.user_id, 'Отлично! Отправляю список подходящих кандидатов...')
+                                                    self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
                                                     return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
                                 elif 'city' not in member_info:
                                     if len(member_bdate) == 9:
@@ -79,7 +78,7 @@ class Bot(object):
                                                                   'q': member_city, 'count': '1', 'v': 5.124}
                                                     self.candidate_city = requests.get(f'https://api.vk.com/method/database.getCities', params=param_city,
                                                                                          headers=self.headers).json()['response']['items'][0]['id']
-                                                    self.write_msg(event.user_id, 'Отлично! Отправляю список подходящих кандидатов...')
+                                                    self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
                                                     return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
                                     else:
                                         self.write_msg(event.user_id, 'Укажите город в котором проживаете ')
@@ -98,7 +97,7 @@ class Bot(object):
                                                             if event.to_me:
                                                                 request = event.text
                                                                 self.member_bdate1 = request
-                                                                self.write_msg(event.user_id, 'Отлично! Отправляю список подходящих кандидатов...')
+                                                                self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
                                                                 return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
 
 
@@ -198,7 +197,7 @@ class Bot(object):
                 if event.type == VkEventType.MESSAGE_NEW:
                     if event.to_me:
                         request = event.text
-                        if request == 'Да' or request == 'да' or request == 'ДА' or request == 'дА':
+                        if 'Да' in request or 'да' in request or 'ДА' in request or 'дА' in request:
                             self.write_msg(self.user_id, f'Поиск завершен. Поздравляю!')
                             return self.approved_candidate, self.black_list
 
