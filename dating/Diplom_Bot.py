@@ -345,7 +345,7 @@ if __name__ == "__main__":
         print(f'Список ID понравившихся кандидатов: {partners_list}')
         print(f'ID кандидатов, попавших в черный лист: {black_list}')
 
-        # получаем ID побудителя
+        # получаем ID победителя
         winner = partners_list[-1]
         print(bot.save_partner(winner))
         print(bot.save_PhotosLink(winner))
