@@ -4,8 +4,10 @@ import requests
 from random import randrange
 import time
 import random
-import psycopg2
-import sqlalchemy as sq
+from vk_api.keyboard import VkKeyboard, VkKeyboardColor
+from vk_api.utils import get_random_id
+from dating.sql_partners import User_VK, DatingUser, Photo, session
+
 
 class Bot(object):
     def __init__(self, token, token_search, group_id):
@@ -13,249 +15,340 @@ class Bot(object):
         self.token_search = token_search
         self.token = token
         self.vk = vk_api.VkApi(token=self.token)
-        self.longpoll = VkLongPoll(self.vk)
         self.headers = {'Content-type': 'application/json', 'Accept': 'text/plain', 'Content-Encoding': 'utf-8'}
 
-    def write_msg(self, user_id, message):
-        self.vk.method('messages.send', {'user_id': user_id, 'message': message, 'random_id': randrange(10 ** 7)})
 
-    def get_member_info(self):   # получаем условия для подбора кандидатов
-        # получаем участников группы
-        params = {'access_token': self.token, 'group_id': self.group_id, 'sort': 'time_asc', 'v': 5.124}
-        member_list = requests.get(f'https://api.vk.com/method/groups.getMembers', params=params).json()['response']['items']
-        # для каждого участника выводим условия для подбора кандидатов
-        for self.user_id in member_list:
-            params_user = {'access_token': self.token, 'user_ids': self.user_id, 'fields': 'first_name,last_name,sex,bdate,relation,city', 'v': 5.124}
-            member_info = requests.get(f'https://api.vk.com/method/users.get', params=params_user).json()['response'][0]
-            self.first_name = member_info['first_name']
-            self.last_name = member_info['last_name']
-
-            member_sex = member_info['sex']
-            if member_sex == 1:
-                self.candidate_sex = 2
-            else:
-                self.candidate_sex = 1
-
-            member_bdate = member_info['bdate']
-            self.member_bdate1 = member_bdate.replace('.', ',')[5:]
-
-            # знакомимся и запрашивем недостающие данные для подбора кандидатов
-            for self.user_id in member_list:
-                self.write_msg(self.user_id, 'Привет! Меня зовут Бот. Я готов помочь вам найти вторую половинку. Начнем? Да/Нет')
-                for event in self.longpoll.listen():
-                    if event.type == VkEventType.MESSAGE_NEW:
-                        if event.to_me:
-                            request = event.text
-                            if 'нет' in request or 'НЕТ' in request or 'Нет' in request or 'нЕТ' in request:
-                                self.write_msg(event.user_id, 'Жаль... Если передумаете, обращайтесь!')
-                            elif 'да' in request or 'ДА' in request or 'Да' in request or 'начнем' in request or 'Начнем' in request or 'Давай' in request or 'давай' in request:
-                                if 'city' in member_info:
-                                    member_city = member_info['city']['title']
-                                    param_city = {'access_token': self.token_search, 'country_id': '1', 'q': member_city, 'count': '1', 'v': 5.124}
-                                    self.candidate_city = requests.get(f'https://api.vk.com/method/database.getCities', params=param_city,
-                                                                         headers=self.headers).json()['response']['items'][0]['id']
-                                    if len(member_bdate) == 9:
-                                        self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
-                                        return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
-                                    else:
-                                        self.write_msg(event.user_id, 'Укажите год вашего рождения в формате 0000 ')
-                                        for event in self.longpoll.listen():
-                                            if event.type == VkEventType.MESSAGE_NEW:
-                                                if event.to_me:
-                                                    request = event.text
-                                                    self.member_bdate1 = request
-                                                    self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
-                                                    return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
-                                elif 'city' not in member_info:
-                                    if len(member_bdate) == 9:
-                                        self.write_msg(event.user_id, 'Укажите город, в котором проживаете ')
-                                        for event in self.longpoll.listen():
-                                            if event.type == VkEventType.MESSAGE_NEW:
-                                                if event.to_me:
-                                                    request = event.text
-                                                    member_city = request
-                                                    param_city = {'access_token': self.token_search, 'country_id': '1',
-                                                                  'q': member_city, 'count': '1', 'v': 5.124}
-                                                    self.candidate_city = requests.get(f'https://api.vk.com/method/database.getCities', params=param_city,
-                                                                                         headers=self.headers).json()['response']['items'][0]['id']
-                                                    self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
-                                                    return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
-                                    else:
-                                        self.write_msg(event.user_id, 'Укажите город в котором проживаете ')
-                                        for event in self.longpoll.listen():
-                                            if event.type == VkEventType.MESSAGE_NEW:
-                                                if event.to_me:
-                                                    request = event.text
-                                                    member_city = request
-                                                    param_city = {'access_token': self.token_search, 'country_id': '1',
-                                                                  'q': member_city, 'count': '1', 'v': 5.124}
-                                                    self.candidate_city = requests.get(f'https://api.vk.com/method/database.getCities', params=param_city,
-                                                                                         headers=self.headers).json()['response']['items'][0]['id']
-                                                    self.write_msg(event.user_id, 'Укажите год вашего рождения в формате 0000 ')
-                                                    for event in self.longpoll.listen():
-                                                        if event.type == VkEventType.MESSAGE_NEW:
-                                                            if event.to_me:
-                                                                request = event.text
-                                                                self.member_bdate1 = request
-                                                                self.write_msg(event.user_id, 'Отлично! Отправляю фотографии подходящих кандидатов...')
-                                                                return self.member_bdate1, self.candidate_city, self.candidate_sex, self.user_id, self.first_name, self.last_name
+    def write_msg(self, user_id, message, attachment=None, keyboard=None):
+        """Функция по отправке сообщений участнику группы"""
+        values = {'user_id': user_id, 'message': message, 'random_id': randrange(10 ** 7)}
+        if attachment:
+            values['attachment'] = attachment
+        if keyboard:
+            values['keyboard'] = keyboard
+        self.vk.method('messages.send', values)
 
 
-    def search_candidate(self):   # подбор кандидатов
-        # вносим в таблицу инфо об участнике группы user_VK
-        table_user = (self.user_id, self.first_name, self.last_name, self.member_bdate1, self.candidate_city)
-        connection.execute(f"INSERT INTO user_VK (vk_id,first_name,second_name,birth_year,city) "
-                           f"VALUES {table_user}")
-        self.approved_candidate = []   # список утвержденных кандидатов
-        self.black_list = []    # черный список
-        offset = 0
-        n = 1
-        for y in range(0,1000):
-            list_id = []
-
-            # ищем кандидатов
-            candidate_param = {'access_token': self.token_search, 'is_closed': 'False', 'has_photo': '1', 'city': self.candidate_city,
-                                'sex': self.candidate_sex, 'status': '6', 'birth_year': self.member_bdate1, 'count': '10', 'offset': offset, 'v': 5.124}
-            candidate_list = requests.get(f'https://api.vk.com/method/users.search', params=candidate_param, headers=self.headers).json()
-            list_1 = candidate_list['response']['items']
-
-            # оставляем кандидатов с открытой страницей
-            for u in list_1:
-                if u['is_closed'] is False:
-                    list_id.append([u['id'], u['first_name'], u['last_name']])
-            time.sleep(0.3)
-            list_candidate = {}
-
-            # по каждому найденному кандидату получаем топ 3 фото
-            for candidate_id in list_id:
-                photo_dict = {}
-                photo_param = {'access_token': self.token_search, 'owner_id': candidate_id[0], 'album_id': 'profile', 'extended': '1', 'count': '20', 'photo_sizes': '0', 'v': 5.124}
-                photo_list = requests.get(f'https://api.vk.com/method/photos.get', params=photo_param, headers=self.headers).json()['response']['items']
-                time.sleep(0.5)
-                for photo in photo_list:
-                    photo_id = photo['id']
-                    likes = photo['likes']['count']
-                    link = photo['sizes'][-1]['url']
-                    photo_dict[likes] = f'photo{candidate_id[0]}_{photo_id}', likes, link
-                photo_dict = {l: photo_dict[l] for l in sorted(photo_dict, reverse=True)}
-                if len(photo_dict) > 2:
-                    list_candidate[candidate_id[0], candidate_id[1], candidate_id[2]] = list(photo_dict.values())[0:3]
-
-
-            for number, candidate in enumerate(list(list_candidate.items()), n):
-                link_url = {}
-                # отправляем по 3 фото каждого кандидата нашему участнику группы
-                for photo_name in candidate[1]:
-                    link_url[photo_name[1]] = photo_name[2]
-
-                    ph_param = {'access_token': self.token, 'user_id': self.user_id, 'message': f'Кандидат № {number} - {candidate[0][1]} {candidate[0][2]}',
-                                'random_id': random.getrandbits(64), 'attachment': photo_name[0], 'v': 5.124}
-                    response = requests.get(f'https://api.vk.com/method/messages.send', params=ph_param,
-                                                 headers=self.headers).json()
-                self.write_msg(self.user_id, f'Если вам понравился кандидат № {number}, то пришлите - 1. Иначе - 0')
-
-                # выбираем с участником кандидатов, результаты вносим в таблицы
-                for event in self.longpoll.listen():
-                    if event.type == VkEventType.MESSAGE_NEW:
-                        if event.to_me:
-                            request = event.text
-                            if request == '1':
-                                self.approved_candidate.append(f'{number}. {candidate[0][1]} {candidate[0][2]} - https://vk.com/id{candidate[0][0]}')
-
-                                # вносим инфо о кандидатах в таблицу datinguser
-                                table_datinguser = (candidate[0][0], candidate[0][1], candidate[0][2], self.member_bdate1, f'https://vk.com/id{candidate[0][0]}', self.user_id)
-                                connection.execute(f"INSERT INTO datinguser (pair_vk_id,first_name,second_name,birth_year,link,id_User_VK) "
-                                                   f"VALUES {table_datinguser}""")
-
-                                # вносим данные о фото кандидатов в таблицу Photos
-                                for likes_photo, link_photo1 in link_url.items():
-                                    table_Photos = (candidate[0][0], likes_photo, link_photo1)
-                                    connection.execute(f"INSERT INTO Photos (id_DatingUser,count_likes,link_photo) "
-                                                       f"VALUES {table_Photos}")
-                                self.write_msg(event.user_id, 'Отлично, сохраняю в списке подходящих кандидатов')
-                                break
-                            elif request == '0':
-                                self.write_msg(event.user_id, 'Пропускаем')
-                                self.black_list.append(candidate[0][0])
-                                break
+    def start(self):
+        """Функция, ожидающая первичного сообщения от участника группы, для его идентификации, получения ID."""
+        for event in longpoll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                text = event.text.lower()
+                keyboard = VkKeyboard(one_time= False)
+                keyboard.add_button('Да', color=VkKeyboardColor.PRIMARY)
+                keyboard.add_button('Позже', color=VkKeyboardColor.SECONDARY)
+                keyboard = keyboard.get_keyboard()
+                if event.from_user:
+                    self.write_msg(event.user_id, f'{bot.get_fullname(event.user_id)[0]}, привет! \n'
+                                                  f'Добро пожаловать в группу Встречи и знакомства! \n'
+                                                  'Хочешь найти себе пару?', keyboard=keyboard)
+                    for event in longpoll.listen():
+                        if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                            text = event.text.lower()
+                            if text != 'да':
+                                self.write_msg(event.user_id, 'Как будет подходящее время, напиши мне!')
+                                return None
                             else:
-                                self.write_msg(event.user_id, 'Вы ввели неверное значение. Попробуйте еще раз')
-                                continue
-                            self.write_msg(event.user_id, 'Вы ввели неверное значение. Попробуйте еще раз')
-                            break
-
-            self.write_msg(self.user_id, f'Направляю Вам список понравившихся кандидатов. \n')
-            for item in self.approved_candidate:
-                self.write_msg(self.user_id, item)
-            self.write_msg(self.user_id, f'Если вы выбрали пару, пришлите - Да \n'
-                                         f'Если же желаете посмотреть еще новых кандидатов, пришлите - 0 \n'
-                                         f'Для удаления кандидатов из списка, пришлите - DEL \n')
+                                self.write_msg(event.user_id, 'Отлично! Тогда начнем!')
+                                break
+                    return event.user_id
 
 
-            # в зависимости от ответа участника группы либо корректируем список кандидатов, либо продолжаем подбор, либо завершаем
-            for event in self.longpoll.listen():
-                if event.type == VkEventType.MESSAGE_NEW:
-                    if event.to_me:
-                        request = event.text
-                        if 'Да' in request or 'да' in request or 'ДА' in request or 'дА' in request:
-                            self.write_msg(self.user_id, f'Поиск завершен. Поздравляю!')
-                            return self.approved_candidate, self.black_list
+    def get_fullname(self, id):
+        """Функция для получения Имени и Фамилии участника или кандидатов"""
+        params_user = {'access_token': self.token_search, 'user_ids': id,
+                       'fields': 'first_name,last_name', 'v': 5.124}
+        info = requests.get(f'https://api.vk.com/method/users.get', params=params_user).json()['response'][0]
+        self.first_name = info['first_name']
+        self.last_name = info['last_name']
+        return self.first_name, self.last_name
 
-                        # корретируем список кандидатов, вносим изменения в таблицы
-                        elif request == 'DEL' or request == 'del' or request == 'Del':
-                            self.write_msg(self.user_id, f'Пришлите номера кандидатов, которых необходимо удалить из списка, через запятую')
-                            for event in self.longpoll.listen():
-                                if event.type == VkEventType.MESSAGE_NEW:
-                                    if event.to_me:
-                                        request = event.text
-                                        delete_list = list(request.replace(' ', '').replace(',', ''))
-                                        for num in delete_list:
-                                            for person in self.approved_candidate:
-                                                if person[0] == num:
-                                                    id_delete = person[person.index('d') + 1:]
-                                                    connection.execute("""DELETE from Photos where id_DatingUser = %s;""", (id_delete,))
-                                                    connection.execute("""DELETE from datinguser where pair_vk_id = %s;""", (id_delete,))
-                                                    self.approved_candidate.remove(person)
-                                                    self.black_list.append(id_delete)
-                                        self.write_msg(self.user_id, f'Удалено. \n'
-                                                                     f'Направляю Вам скорректированный список понравившихся кандидатов. \n')
-                                        for item in self.approved_candidate:
-                                            self.write_msg(self.user_id, item)
-                                        self.write_msg(self.user_id, f'Если вы выбрали пару, пришлите - Да \n'
-                                                                     f'Если же желаете посмотреть еще новых кандидатов, пришлите - 0 \n'
-                                                                     f'Для удаления кандидатов из списка, пришлите - DEL')
-                                        break
-                        elif request == '0':
-                            self.write_msg(self.user_id, f'Продолжаем подбор кандидатов...')
-                            n += len(self.approved_candidate)
-                            break
-                        else:
-                            self.write_msg(event.user_id, 'Вы ввели неверное значение. Попробуйте еще раз')
-                            continue
-            offset += 10
-        # result = connection.execute("""SELECT u.first_name, u.second_name, d.first_name, d.second_name, link FROM User_VK u
-        #                                 JOIN DatingUser d on d.id_User_VK = u.vk_id""").fetchall()
-        # print(result)
-        return self.approved_candidate, self.black_list
+
+    def get_city(self, id):
+        """Функция для получения города проживания"""
+        params_user = {'access_token': self.token_search, 'user_ids': id,
+                       'fields': 'city', 'v': 5.124}
+        info = requests.get(f'https://api.vk.com/method/users.get', params=params_user).json()['response'][0]
+
+        if 'city' in info:
+            self.city = info['city']['title']
+            return self.city
+        elif 'city' not in info:
+            self.write_msg(id, 'Укажи город, в котором ищешь партнера? Например, Москва')
+            for event in longpoll.listen():
+                if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                    self.city = event.text
+                    param_city = {'access_token': self.token_search, 'country_id': '1', 'q': self.city, 'count': '1', 'v': 5.124}
+                    city = requests.get(f'https://api.vk.com/method/database.getCities', params=param_city,
+                                     headers=self.headers).json()['response']['items']
+                    if len(city) != 0:
+                        print(self.city)
+                        return self.city
+                    else:
+                        self.write_msg(id, f'Не нашел города с названием {self.city}'
+                                           f'Попробуй еще раз ввести название города. Например, Москва')
+        return self.city
+
+
+    def get_gender(self, id):
+        """Функция для получения пола"""
+        keyboard = VkKeyboard(one_time=False)
+        keyboard.add_button('Девушка 👩', color=VkKeyboardColor.PRIMARY)
+        keyboard.add_button('Парень 👨', color=VkKeyboardColor.POSITIVE)
+        keyboard.add_button('Любого пола', color=VkKeyboardColor.SECONDARY)
+        keyboard = keyboard.get_keyboard()
+        self.write_msg(id, 'Партнера какого пола будем подбирать?', keyboard=keyboard)
+
+        for event in longpoll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                text = event.text
+                if text == 'Девушка 👩':
+                    self.gender = '1'
+                    return self.gender
+                elif text == 'Парень 👨':
+                    self.gender = '2'
+                    return self.gender
+                elif text == 'Любого пола':
+                    self.gender = '0'
+                    return self.gender
+
+
+    def get_birth_year(self, pair_id):
+        """Функция для получения даты рождения"""
+        params_user = {'access_token': self.token_search, 'user_ids': winner,
+                       'fields': 'bdate,city', 'v': 5.124}
+        info = requests.get(f'https://api.vk.com/method/users.get', params=params_user).json()['response'][0]
+
+        if 'bdate' in info:
+            self.bdate = info['bdate']
+        else:
+            self.bdate = '0'
+        return self.bdate
+
+
+    def get_age_from(self, id):
+        """Функция для получения минимального возраста кандидата"""
+        self.write_msg(id, 'Укажи минимальный возраст партнера в цифрах. Например, 25')
+
+        for event in longpoll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                self.age_from = int(event.text)
+                if 18 < self.age_from < 100:
+                    return self.age_from
+                else:
+                    self.write_msg(id, 'К сожалению, ты указал недопустимый возраст. \n'
+                                       'Попробуй еще раз. Например, 25')
+
+
+
+    def get_age_to(self, id):
+        """Функция для получения максимального возраста кандидата"""
+        self.write_msg(id, 'Укажи максимальный возраст партнера в цифрах. Например, 30')
+
+        for event in longpoll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                self.age_to = int(event.text)
+                if self.age_to >= 100:
+                    self.write_msg(id, 'К сожалению, ты указал недопустимый возраст. \n'
+                                       'Попробуй еще раз. Например, 30')
+                elif self.age_to >= self.age_from:
+                    self.write_msg(id, 'Отлично!')
+                    time.sleep(0.5)
+                    self.write_msg(id, 'Минуточку..... \n'
+                                       'Ищу кандидатов....')
+                    return self.age_to
+                else:
+                    self.write_msg(id, f'Эта возраст меньше, чем указанный тобой минимальный возраст партнера. \n'
+                                       f'Попробуй еще раз! Укажи возраст не меньше, чем {self.age_from}')
+
+
+    def search_partners(self, id, offset=0):
+        """Функция для поиска кандидатов по полученным параметрам"""
+        candidate_param = {'access_token': self.token_search, 'is_closed': 'False', 'has_photo': '1',
+                         'sex': self.gender, 'status': '6', 'hometown': self.city, 'age_from': self.age_from,
+                         'age_to': self.age_to, 'count': '20', 'offset': offset,  'v': 5.124}
+        candidate_list = requests.get(f'https://api.vk.com/method/users.search',
+                                      params=candidate_param, headers=self.headers).json()['response']['items']
+        time.sleep(0.2)
+
+        # создание списка ID кандидатов с открытыми страницами VK
+        self.list_partner = []
+        for partner in candidate_list:
+            if partner['is_closed'] is False:
+                self.list_partner.append(partner['id'])
+
+        if len(self.list_partner) == 0:
+            self.write_msg(id, 'К сожалению, я не нашел кандидатов по твоим критериям. Давай попробуем еще раз. \n'
+                               'Пришли мне любое сообщение, и мы начнем новый поиск. ')
+        return self.list_partner
+
+
+    def choose_3photo(self, partner_id):
+        """Функция для поиска кандидатов по полученным параметрам"""
+        photo_param = {'access_token': self.token_search, 'owner_id': partner_id, 'album_id': 'profile',
+                       'extended': '1', 'count': '20', 'photo_sizes': '0', 'v': 5.124}
+        photo_list = requests.get(f'https://api.vk.com/method/photos.get', params=photo_param, headers=self.headers).json()['response']
+        time.sleep(0.5)
+
+        # создание словаря для сортировки фото кандидатов по количеству лайков
+        photo_dict = {}
+        if photo_list['count'] >= 3:
+            for photo in photo_list['items']:
+                photo_id = photo['id']
+                likes = photo['likes']['count']
+                link = photo['sizes'][-1]['url']
+                photo_dict[likes] = f'photo{partner_id}_{photo_id}'
+        else:
+            pass
+
+        # сортировка по ключу (лайкам)
+        photo_dict = {l: photo_dict[l] for l in sorted(photo_dict, reverse=True)}
+
+        # получение топ 3 фото в формате, удобном для отправки участнику группы
+        self.photos = list(photo_dict.values())[0:3]
+        return self.photos
+
+
+    def get_photo_info(self, photo_id):
+        """Функция для получения информации (количеству лайков и ссылки на фото) по ID фотографии"""
+        photo_param = {'access_token': self.token_search, 'photos': photo_id, 'extended': '1', 'v': 5.124}
+        photo_info = requests.get(f'https://api.vk.com/method/photos.getById', params=photo_param, headers=self.headers).json()['response']
+
+        link = photo_info[0]['sizes'][-1]['url']
+        likes = photo_info[0]['likes']['count']
+        return link, likes
+
+
+    def send_photo(self, id, partner_id):
+        """Функция для отправки 3х фотографий участнику группы"""
+        all_photo = ",".join(self.photos)
+        time.sleep(0.5)
+        full_name_partner = ' '.join(bot.get_fullname(partner_id))
+
+        ph_param = {'access_token': self.token, 'user_id': id, 'message': f'{full_name_partner} ',
+                    'random_id': random.getrandbits(64), 'attachment': all_photo, 'v': 5.124}
+        response = requests.get(f'https://api.vk.com/method/messages.send', params=ph_param, headers=self.headers).json()
+        return response
+
+    def choose_candidates(self, id, partner_id, partners_list, black_list):
+        """Функция для коммуникации с участников с целью выбора понравившихся кандидатов"""
+        numbers_candidates = {}
+        keyboard = VkKeyboard(one_time=False)
+        keyboard.add_button('Нравится 👍', color=VkKeyboardColor.PRIMARY)
+        keyboard.add_button('Не нравится 👎', color=VkKeyboardColor.NEGATIVE)
+        keyboard.add_line()
+        keyboard.add_button('Сделать выбор из понравившихся 👆', color=VkKeyboardColor.POSITIVE)
+        keyboard = keyboard.get_keyboard()
+        self.write_msg(id, 'Выбирай... ', keyboard=keyboard)
+
+        for event in longpoll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                text = event.text
+                if text == 'Нравится 👍':
+                    partners_list.append(partner_id)
+                    break
+
+                elif text == 'Не нравится 👎':
+                    black_list.append(partner_id)
+                    break
+
+                elif text == 'Сделать выбор из понравившихся 👆':
+                    for i, partner_id in enumerate(partners_list, 1):
+                        self.write_msg(id, f'Кандидат №{i} {" ".join(bot.get_fullname(partner_id))}')
+                        bot.choose_3photo(partner_id)
+                        bot.send_photo(id, partner_id)
+                        numbers_candidates[i] = partner_id
+
+                    self.write_msg(id, 'Пора сделать выбор. Пришли номер выбранного кандидата')
+                    for event in longpoll.listen():
+                        if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:
+                            text = event.text
+                            if int(text) not in list(numbers_candidates.keys()):
+                                self.write_msg(id, f'Кандидат с номером {int(text)} отсутствует в нашем списке. '
+                                                   f'Попробуй еще раз, введи номер кандидата цифрами.')
+                            for number, self.partner in numbers_candidates.items():
+                                if int(text) == number:
+                                    full_name_pair = " ".join(bot.get_fullname(self.partner))
+                                    link_pair = f'https://vk.com/id{self.partner}'
+                                    self.write_msg(id, f'Поздравляю! {full_name_pair} - отличный выбор!'
+                                                   f'Отправляю тебе ссылку на страницу партнера {link_pair}')
+                                    winner_pair = self.partner
+                                    partners_list.append(winner_pair)
+                                    return self.partner
+
+
+    def save_user(self, id):
+        """Функция для сохранения информации об участнике группы в базе данных"""
+        table_user = User_VK(id, self.first_name, self.last_name, self.city)
+        session.add(table_user)
+        session.commit()
+        return table_user
+
+    def save_partner(self, pair_id):
+        """Функция для сохранения информации о выбранном кандидате в базе данных"""
+        bot.get_birth_year(winner)
+        table_datinguser = DatingUser(winner, self.first_name, self.last_name, self.bdate, id)
+        session.add(table_datinguser)
+        session.commit()
+        return table_datinguser
+
+    def save_PhotosLink(self, pair_id):
+        """Функция для сохранения топ 3 фотографии выбранного кандидата в базе данных"""
+        photo_top = bot.choose_3photo(winner)
+
+        # получаем ID 3х фотографий
+        photo_link = []
+        for photo in photo_top:
+            photo_link.append(photo[5:])
+
+        # получаем количество лайков и ссылки на фотографии
+        for photo_id in photo_link:
+            photo_data = bot.get_photo_info(photo_id)
+            likes_photo = photo_data[1]
+            link_photo1 = photo_data[0]
+
+            # созраняем полученную информацию в базе данных
+            table_Photos = Photo(winner, likes_photo, link_photo1)
+            session.add(table_Photos)
+        session.commit()
+        return 'Информация сохранена в базе данных'
+
 
 if __name__ == "__main__":
-    login = 'postgres'
-    kod = 'Shitko77'
-    engine = sq.create_engine(f'postgresql+psycopg2://{login}:{kod}$@localhost:5432/dating_pair')
-    connection = engine.connect()
     group_id = '198765605'
-    token = '...'
-    token_search = '...'
-    bot = Bot(token, token_search, group_id)
-    bot.get_member_info()
-    print(bot.search_candidate())
+    token = '................................'
+    token_search = '................................'
+    vk = vk_api.VkApi(token=token)
+    longpoll = VkLongPoll(vk)
 
+    for event in longpoll.listen():
+        bot = Bot(token, token_search, group_id)
+        id = event.user_id
+        bot.start()
+        bot.get_fullname(id)
+        bot.get_city(id)
+        bot.get_gender(id)
+        bot.get_age_from(id)
+        bot.get_age_to(id)
+        print(bot.save_user(id))
 
+        # список понравившихся кандидатов
+        partners_list = []
+        # черный лист
+        black_list = []
 
+        for partner_id in bot.search_partners(id):
+            if len(bot.choose_3photo(partner_id)) == 3:
+                bot.send_photo(id, partner_id)
+                if bot.choose_candidates(id, partner_id, partners_list, black_list) != None:
+                    break
 
+        print(f'Список ID понравившихся кандидатов: {partners_list}')
+        print(f'ID кандидатов, попавших в черный лист: {black_list}')
 
-
-
+        # получаем ID побудителя
+        winner = partners_list[-1]
+        print(bot.save_partner(winner))
+        print(bot.save_PhotosLink(winner))
 
 
 

@@ -1,2 +1,5 @@
 .idea/
 Diplom_Bot_token.py
+__pycache__/
+ dating/__pycache__/sql_partners.cpython-38.pyc
+
